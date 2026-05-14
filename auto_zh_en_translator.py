@@ -2,6 +2,11 @@
 This project provides a simple Chinese-English translation demo
 with automatic language detection.
 """
+"""
+pip install transformers sentencepiece torch
+"""
+
+
 import re
 from transformers import pipeline
 CHINESE_PATTERN = re.compile(r"[\u4e00-\u9fff]")
