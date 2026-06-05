@@ -1,236 +1,236 @@
-import os  # 用于创建输出目录、拼接文件路径
-import requests  # 用于请求公开 API
-import numpy as np  # 用于数值计算
-import pandas as pd  # 用于处理表格数据
-import matplotlib.pyplot as plt  # 用于绘图和保存图片
+import os  # Used to create output directories and build file paths
+import requests  # Used to request data from public APIs
+import numpy as np  # Used for numerical computation
+import pandas as pd  # Used for tabular data processing
+import matplotlib.pyplot as plt  # Used for plotting and saving charts
 
-from sklearn.pipeline import make_pipeline  # 用于组合多项式特征和线性回归模型
-from sklearn.preprocessing import PolynomialFeatures  # 用于生成多项式特征
-from sklearn.linear_model import LinearRegression  # 线性回归模型
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error  # 模型评估指标
-
-
-OUTPUT_DIR = "btc_forecast_output"  # 保存 CSV 和图片的输出目录
-os.makedirs(OUTPUT_DIR, exist_ok=True)  # 如果目录不存在则创建，存在则不报错
+from sklearn.pipeline import make_pipeline  # Used to combine preprocessing and model steps
+from sklearn.preprocessing import PolynomialFeatures  # Used to generate polynomial features
+from sklearn.linear_model import LinearRegression  # Linear regression model
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error  # Model evaluation metrics
 
 
-def fetch_btc_prices(days=365, vs_currency="usd"):  # 获取 BTC 历史价格数据
-    url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"  # CoinGecko 历史价格 API
+OUTPUT_DIR = "btc_forecast_output"  # Output directory for CSV files and chart images
+os.makedirs(OUTPUT_DIR, exist_ok=True)  # Create the output directory if it does not exist
 
-    params = {  # API 请求参数
-        "vs_currency": vs_currency,  # 计价货币，例如 usd
-        "days": days,  # 获取最近多少天的数据
-        "interval": "daily"  # 使用日线数据
+
+def fetch_btc_prices(days=365, vs_currency="usd"):  # Fetch BTC historical price data
+    url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"  # CoinGecko market chart API
+
+    params = {  # API request parameters
+        "vs_currency": vs_currency,  # Quote currency, such as USD
+        "days": days,  # Number of historical days to fetch
+        "interval": "daily"  # Use daily price data
     }
 
-    response = requests.get(url, params=params, timeout=30)  # 发送 GET 请求
-    response.raise_for_status()  # 如果请求失败，抛出异常
+    response = requests.get(url, params=params, timeout=30)  # Send GET request to the API
+    response.raise_for_status()  # Raise an error if the request fails
 
-    data = response.json()  # 将返回结果解析为 JSON
+    data = response.json()  # Parse API response as JSON
 
-    df = pd.DataFrame(data["prices"], columns=["timestamp", "price"])  # 提取价格数据并转成 DataFrame
-    df["date"] = pd.to_datetime(df["timestamp"], unit="ms").dt.date  # 将毫秒时间戳转成日期
-    df["date"] = pd.to_datetime(df["date"])  # 将 date 字段转成 pandas datetime 类型
+    df = pd.DataFrame(data["prices"], columns=["timestamp", "price"])  # Convert price data to DataFrame
+    df["date"] = pd.to_datetime(df["timestamp"], unit="ms").dt.date  # Convert timestamp to date
+    df["date"] = pd.to_datetime(df["date"])  # Convert date column to pandas datetime type
 
-    df = (  # 清洗并排序数据
-        df[["date", "price"]]  # 只保留日期和价格两列
-        .drop_duplicates("date")  # 删除重复日期
-        .sort_values("date")  # 按日期升序排列
-        .reset_index(drop=True)  # 重置索引
+    df = (  # Clean and sort the dataset
+        df[["date", "price"]]  # Keep only date and price columns
+        .drop_duplicates("date")  # Remove duplicate dates
+        .sort_values("date")  # Sort data by date
+        .reset_index(drop=True)  # Reset row index
     )
 
-    return df  # 返回清洗后的历史价格数据
+    return df  # Return cleaned historical price data
 
 
-def evaluate_model(y_true, y_pred):  # 计算模型拟合效果
-    mae = mean_absolute_error(y_true, y_pred)  # 平均绝对误差
-    rmse = np.sqrt(mean_squared_error(y_true, y_pred))  # 均方根误差
-    r2 = r2_score(y_true, y_pred)  # R² 拟合优度
+def evaluate_model(y_true, y_pred):  # Calculate model performance metrics
+    mae = mean_absolute_error(y_true, y_pred)  # Mean Absolute Error
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))  # Root Mean Squared Error
+    r2 = r2_score(y_true, y_pred)  # R-squared score
 
-    mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100  # 平均绝对百分比误差
+    mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100  # Mean Absolute Percentage Error
 
-    return {  # 返回评估指标
-        "r2": r2,  # R²
-        "mae": mae,  # MAE
-        "rmse": rmse,  # RMSE
-        "mape": mape  # MAPE
+    return {  # Return all evaluation metrics
+        "r2": r2,  # R-squared score
+        "mae": mae,  # Mean Absolute Error
+        "rmse": rmse,  # Root Mean Squared Error
+        "mape": mape  # Mean Absolute Percentage Error
     }
 
 
-def train_predict(df, train_days, forecast_days, degree=3):  # 训练模型并预测未来价格
-    train_df = df.tail(train_days).copy().reset_index(drop=True)  # 取最近 train_days 天作为训练数据
+def train_predict(df, train_days, forecast_days, degree=3):  # Train model and generate future forecast
+    train_df = df.tail(train_days).copy().reset_index(drop=True)  # Use the latest train_days rows as training data
 
-    X_train = np.arange(len(train_df)).reshape(-1, 1)  # 用第几天作为特征 X
-    y_train = train_df["price"].values  # 价格作为目标变量 y
+    X_train = np.arange(len(train_df)).reshape(-1, 1)  # Use time index as model feature
+    y_train = train_df["price"].values  # Use BTC price as target variable
 
-    model = make_pipeline(  # 创建多项式回归管道
-        PolynomialFeatures(degree=degree),  # 将时间特征扩展为 degree 阶多项式
-        LinearRegression()  # 对多项式特征做线性回归
+    model = make_pipeline(  # Build polynomial regression pipeline
+        PolynomialFeatures(degree=degree),  # Generate polynomial features
+        LinearRegression()  # Fit linear regression on polynomial features
     )
 
-    model.fit(X_train, y_train)  # 训练模型
+    model.fit(X_train, y_train)  # Train the model
 
-    fitted_price = model.predict(X_train)  # 对训练区间进行拟合预测
+    fitted_price = model.predict(X_train)  # Predict fitted values on training data
 
-    metrics = evaluate_model(y_train, fitted_price)  # 计算拟合效果指标
+    metrics = evaluate_model(y_train, fitted_price)  # Evaluate in-sample model performance
 
-    X_future = np.arange(  # 构造未来预测区间的时间特征
-        len(train_df),  # 从训练数据结束后的下一天开始
-        len(train_df) + forecast_days  # 一直到未来 forecast_days 天
-    ).reshape(-1, 1)  # 转成 sklearn 需要的二维数组
+    X_future = np.arange(  # Create future time index for forecasting
+        len(train_df),  # Start from the next time index after training data
+        len(train_df) + forecast_days  # End after forecast_days future points
+    ).reshape(-1, 1)  # Convert to 2D array required by scikit-learn
 
-    predicted_price = model.predict(X_future)  # 预测未来价格
+    predicted_price = model.predict(X_future)  # Forecast future BTC prices
 
-    future_dates = pd.date_range(  # 构造未来日期序列
-        start=train_df["date"].iloc[-1] + pd.Timedelta(days=1),  # 从最后一个训练日期的下一天开始
-        periods=forecast_days,  # 生成 forecast_days 个日期
-        freq="D"  # 每天一个点
+    future_dates = pd.date_range(  # Create future date range
+        start=train_df["date"].iloc[-1] + pd.Timedelta(days=1),  # Start from the day after the last training date
+        periods=forecast_days,  # Number of forecast days
+        freq="D"  # Daily frequency
     )
 
-    fitted_df = pd.DataFrame({  # 保存训练区间的真实价格和拟合价格
-        "date": train_df["date"],  # 日期
-        "actual_price": train_df["price"],  # 真实价格
-        "fitted_price": fitted_price  # 拟合价格
+    fitted_df = pd.DataFrame({  # Store actual and fitted values for the training period
+        "date": train_df["date"],  # Historical date
+        "actual_price": train_df["price"],  # Actual BTC price
+        "fitted_price": fitted_price  # Model fitted BTC price
     })
 
-    forecast_df = pd.DataFrame({  # 保存未来预测结果
-        "date": future_dates,  # 未来日期
-        "predicted_price": predicted_price  # 预测价格
+    forecast_df = pd.DataFrame({  # Store future forecast values
+        "date": future_dates,  # Future date
+        "predicted_price": predicted_price  # Forecasted BTC price
     })
 
-    return fitted_df, forecast_df, metrics  # 返回拟合数据、预测数据和评估指标
+    return fitted_df, forecast_df, metrics  # Return fitted data, forecast data, and metrics
 
 
-def print_report(name, metrics, forecast_df):  # 打印模型评估和预测结果
-    print("\n" + "=" * 70)  # 打印分隔线
-    print(name)  # 打印实验名称
-    print("=" * 70)  # 打印分隔线
+def print_report(name, metrics, forecast_df):  # Print model metrics and forecast summary
+    print("\n" + "=" * 70)  # Print separator line
+    print(name)  # Print experiment name
+    print("=" * 70)  # Print separator line
 
-    print(f"R²   : {metrics['r2']:.6f}")  # 打印 R²
-    print(f"MAE  : ${metrics['mae']:,.2f}")  # 打印 MAE
-    print(f"RMSE : ${metrics['rmse']:,.2f}")  # 打印 RMSE
-    print(f"MAPE : {metrics['mape']:.2f}%")  # 打印 MAPE
+    print(f"R²   : {metrics['r2']:.6f}")  # Print R-squared score
+    print(f"MAE  : ${metrics['mae']:,.2f}")  # Print Mean Absolute Error
+    print(f"RMSE : ${metrics['rmse']:,.2f}")  # Print Root Mean Squared Error
+    print(f"MAPE : {metrics['mape']:.2f}%")  # Print Mean Absolute Percentage Error
 
-    print("\n预测结果：")  # 打印预测结果标题
-    print(f"预测起始日期 : {forecast_df['date'].iloc[0].date()}")  # 打印预测开始日期
-    print(f"预测结束日期 : {forecast_df['date'].iloc[-1].date()}")  # 打印预测结束日期
-    print(f"最后一天预测价格 : ${forecast_df['predicted_price'].iloc[-1]:,.2f}")  # 打印最后一天预测价格
-    print(f"预测最高价 : ${forecast_df['predicted_price'].max():,.2f}")  # 打印预测区间最高价
-    print(f"预测最低价 : ${forecast_df['predicted_price'].min():,.2f}")  # 打印预测区间最低价
+    print("\nForecast Summary")  # Print forecast summary title
+    print(f"Forecast Start Date    : {forecast_df['date'].iloc[0].date()}")  # Print forecast start date
+    print(f"Forecast End Date      : {forecast_df['date'].iloc[-1].date()}")  # Print forecast end date
+    print(f"Final Forecast Price   : ${forecast_df['predicted_price'].iloc[-1]:,.2f}")  # Print final forecast price
+    print(f"Maximum Forecast Price : ${forecast_df['predicted_price'].max():,.2f}")  # Print maximum forecast price
+    print(f"Minimum Forecast Price : ${forecast_df['predicted_price'].min():,.2f}")  # Print minimum forecast price
 
-    print("\n前 10 天预测：")  # 打印前 10 天预测结果
-    print(forecast_df.head(10).to_string(index=False))  # 以表格形式打印前 10 行
+    print("\nFirst 10 Forecasted Days:")  # Print first 10 forecasted rows
+    print(forecast_df.head(10).to_string(index=False))  # Display first 10 forecasted rows
 
-    print("\n后 10 天预测：")  # 打印后 10 天预测结果
-    print(forecast_df.tail(10).to_string(index=False))  # 以表格形式打印后 10 行
+    print("\nLast 10 Forecasted Days:")  # Print last 10 forecasted rows
+    print(forecast_df.tail(10).to_string(index=False))  # Display last 10 forecasted rows
 
 
-def plot_and_save(title, fitted_df, forecast_df, filename):  # 绘图并保存图片
-    plt.figure(figsize=(14, 7))  # 创建画布并设置尺寸
+def plot_and_save(title, fitted_df, forecast_df, filename):  # Plot actual, fitted, and forecast prices, then save chart
+    plt.figure(figsize=(14, 7))  # Create figure with fixed size
 
-    plt.plot(  # 绘制真实价格曲线
-        fitted_df["date"],  # x 轴为日期
-        fitted_df["actual_price"],  # y 轴为真实价格
-        label="Actual price"  # 图例名称
+    plt.plot(  # Plot actual BTC price
+        fitted_df["date"],  # X-axis: historical date
+        fitted_df["actual_price"],  # Y-axis: actual price
+        label="Actual Price"  # Legend label
     )
 
-    plt.plot(  # 绘制拟合价格曲线
-        fitted_df["date"],  # x 轴为日期
-        fitted_df["fitted_price"],  # y 轴为拟合价格
-        label="Fitted price"  # 图例名称
+    plt.plot(  # Plot fitted BTC price
+        fitted_df["date"],  # X-axis: historical date
+        fitted_df["fitted_price"],  # Y-axis: fitted price
+        label="Fitted Price"  # Legend label
     )
 
-    plt.plot(  # 绘制未来预测价格曲线
-        forecast_df["date"],  # x 轴为未来日期
-        forecast_df["predicted_price"],  # y 轴为预测价格
-        label="Forecast price"  # 图例名称
+    plt.plot(  # Plot forecasted BTC price
+        forecast_df["date"],  # X-axis: future date
+        forecast_df["predicted_price"],  # Y-axis: forecasted price
+        label="Forecast Price"  # Legend label
     )
 
-    plt.title(title)  # 设置图表标题
-    plt.xlabel("Date")  # 设置 x 轴名称
-    plt.ylabel("BTC Price USD")  # 设置 y 轴名称
-    plt.legend()  # 显示图例
-    plt.grid(True)  # 显示网格
-    plt.tight_layout()  # 自动调整布局
+    plt.title(title)  # Set chart title
+    plt.xlabel("Date")  # Set X-axis label
+    plt.ylabel("BTC Price USD")  # Set Y-axis label
+    plt.legend()  # Show legend
+    plt.grid(True)  # Show grid
+    plt.tight_layout()  # Adjust layout automatically
 
-    path = os.path.join(OUTPUT_DIR, filename)  # 拼接图片保存路径
-    plt.savefig(path, dpi=200)  # 保存图片
-    plt.show()  # 显示图片
+    path = os.path.join(OUTPUT_DIR, filename)  # Build chart output path
+    plt.savefig(path, dpi=200)  # Save chart as PNG file
+    plt.show()  # Display chart
 
-    print(f"图表已保存: {path}")  # 打印图片保存路径
-
-
-def save_csv(fitted_df, forecast_df, prefix):  # 保存拟合数据和预测数据
-    fitted_path = os.path.join(OUTPUT_DIR, f"{prefix}_fitted.csv")  # 拟合数据 CSV 路径
-    forecast_path = os.path.join(OUTPUT_DIR, f"{prefix}_forecast.csv")  # 预测数据 CSV 路径
-
-    fitted_df.to_csv(fitted_path, index=False)  # 保存拟合数据 CSV
-    forecast_df.to_csv(forecast_path, index=False)  # 保存预测数据 CSV
-
-    print(f"拟合数据已保存: {fitted_path}")  # 打印拟合数据保存路径
-    print(f"预测数据已保存: {forecast_path}")  # 打印预测数据保存路径
+    print(f"Chart saved to: {path}")  # Print saved chart path
 
 
-if __name__ == "__main__":  # 程序入口
-    degree = 3  # 多项式阶数
+def save_csv(fitted_df, forecast_df, prefix):  # Save fitted data and forecast data as CSV files
+    fitted_path = os.path.join(OUTPUT_DIR, f"{prefix}_fitted.csv")  # Build fitted CSV file path
+    forecast_path = os.path.join(OUTPUT_DIR, f"{prefix}_forecast.csv")  # Build forecast CSV file path
 
-    df = fetch_btc_prices(days=365)  # 获取最近一年 BTC 日线价格
+    fitted_df.to_csv(fitted_path, index=False)  # Save fitted data to CSV
+    forecast_df.to_csv(forecast_path, index=False)  # Save forecast data to CSV
 
-    print("原始数据概览：")  # 打印原始数据标题
-    print(df.tail())  # 打印最近几行数据
-    print("\n价格统计：")  # 打印价格统计标题
-    print(df["price"].describe())  # 打印价格描述性统计
+    print(f"Fitted data saved to: {fitted_path}")  # Print fitted CSV path
+    print(f"Forecast data saved to: {forecast_path}")  # Print forecast CSV path
 
-    experiments = [  # 定义多组训练和预测实验
+
+if __name__ == "__main__":  # Program entry point
+    degree = 3  # Polynomial degree
+
+    df = fetch_btc_prices(days=365)  # Fetch BTC price data for the latest 365 days
+
+    print("Dataset Summary")  # Print dataset summary title
+    print(df.tail())  # Print latest rows of the dataset
+    print("\nPrice Statistics")  # Print price statistics title
+    print(df["price"].describe())  # Print descriptive statistics for BTC price
+
+    experiments = [  # Define training and forecasting experiments
         {
-            "name": "最近半年训练，预测未来半年",  # 实验名称
-            "train_days": 180,  # 使用最近 180 天训练
-            "forecast_days": 180,  # 预测未来 180 天
-            "prefix": "train_180_forecast_180",  # 输出文件名前缀
-            "image": "train_180_forecast_180.png"  # 输出图片文件名
+            "name": "Train on Last 180 Days, Forecast Next 180 Days",  # Experiment name
+            "train_days": 180,  # Number of training days
+            "forecast_days": 180,  # Number of forecast days
+            "prefix": "train_180_forecast_180",  # Output file prefix
+            "image": "train_180_forecast_180.png"  # Output chart filename
         },
         {
-            "name": "最近半年训练，预测未来一年",  # 实验名称
-            "train_days": 180,  # 使用最近 180 天训练
-            "forecast_days": 365,  # 预测未来 365 天
-            "prefix": "train_180_forecast_365",  # 输出文件名前缀
-            "image": "train_180_forecast_365.png"  # 输出图片文件名
+            "name": "Train on Last 180 Days, Forecast Next 365 Days",  # Experiment name
+            "train_days": 180,  # Number of training days
+            "forecast_days": 365,  # Number of forecast days
+            "prefix": "train_180_forecast_365",  # Output file prefix
+            "image": "train_180_forecast_365.png"  # Output chart filename
         },
         {
-            "name": "最近一年训练，预测未来半年",  # 实验名称
-            "train_days": 365,  # 使用最近 365 天训练
-            "forecast_days": 180,  # 预测未来 180 天
-            "prefix": "train_365_forecast_180",  # 输出文件名前缀
-            "image": "train_365_forecast_180.png"  # 输出图片文件名
+            "name": "Train on Last 365 Days, Forecast Next 180 Days",  # Experiment name
+            "train_days": 365,  # Number of training days
+            "forecast_days": 180,  # Number of forecast days
+            "prefix": "train_365_forecast_180",  # Output file prefix
+            "image": "train_365_forecast_180.png"  # Output chart filename
         },
         {
-            "name": "最近一年训练，预测未来一年",  # 实验名称
-            "train_days": 365,  # 使用最近 365 天训练
-            "forecast_days": 365,  # 预测未来 365 天
-            "prefix": "train_365_forecast_365",  # 输出文件名前缀
-            "image": "train_365_forecast_365.png"  # 输出图片文件名
+            "name": "Train on Last 365 Days, Forecast Next 365 Days",  # Experiment name
+            "train_days": 365,  # Number of training days
+            "forecast_days": 365,  # Number of forecast days
+            "prefix": "train_365_forecast_365",  # Output file prefix
+            "image": "train_365_forecast_365.png"  # Output chart filename
         }
     ]
 
-    for exp in experiments:  # 逐个执行实验
-        fitted_df, forecast_df, metrics = train_predict(  # 训练模型并得到预测结果
-            df=df,  # 输入历史价格数据
-            train_days=exp["train_days"],  # 当前实验的训练天数
-            forecast_days=exp["forecast_days"],  # 当前实验的预测天数
-            degree=degree  # 多项式阶数
+    for exp in experiments:  # Run each experiment
+        fitted_df, forecast_df, metrics = train_predict(  # Train model and generate forecast
+            df=df,  # Historical BTC price dataset
+            train_days=exp["train_days"],  # Training window size
+            forecast_days=exp["forecast_days"],  # Forecast horizon
+            degree=degree  # Polynomial degree
         )
 
-        print_report(exp["name"], metrics, forecast_df)  # 打印当前实验报告
+        print_report(exp["name"], metrics, forecast_df)  # Print model and forecast report
 
-        save_csv(  # 保存当前实验 CSV
-            fitted_df=fitted_df,  # 拟合数据
-            forecast_df=forecast_df,  # 预测数据
-            prefix=exp["prefix"]  # 文件名前缀
+        save_csv(  # Save fitted and forecast data
+            fitted_df=fitted_df,  # Fitted data
+            forecast_df=forecast_df,  # Forecast data
+            prefix=exp["prefix"]  # Output file prefix
         )
 
-        plot_and_save(  # 绘制并保存当前实验图表
-            title=f"{exp['name']} | Polynomial Degree {degree}",  # 图表标题
-            fitted_df=fitted_df,  # 拟合数据
-            forecast_df=forecast_df,  # 预测数据
-            filename=exp["image"]  # 图片文件名
+        plot_and_save(  # Plot and save chart
+            title=f"{exp['name']} | Polynomial Degree {degree}",  # Chart title
+            fitted_df=fitted_df,  # Fitted data
+            forecast_df=forecast_df,  # Forecast data
+            filename=exp["image"]  # Chart filename
         )
