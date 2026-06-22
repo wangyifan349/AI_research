@@ -1,8 +1,21 @@
-"""Single-file Flask dlib + FAISS 1:N face search.
-
+"""
+AGPL-3.0 Licensed Single-File Flask Face Search Service.
+This script provides a complete web and API service for 1:N face search. It uses
+dlib / face_recognition to extract 128-dimensional face embeddings, stores the
+startup-built face gallery in an exact FAISS IndexFlatIP index, and returns
+ranked cosine-similarity matches for each uploaded query image.
+The gallery database is read only at service startup from the face_database
+folder located beside this file. Web users and API clients can upload query
+images for matching, but they cannot add, modify, rebuild, or delete database
+images through this service.
+The script prints runtime diagnostics at startup, including dlib version, CUDA
+compile status, visible CUDA device count, selected face detector, encoding
+model, FAISS CPU thread count, and database folder path. If dlib can use CUDA,
+the service selects the CNN detector for higher detection accuracy; otherwise it
+selects the CPU-friendly HOG detector.
 Run: python dlib_faiss_flask_1n_single_file.py
 Open: https://localhost:5000
-Gallery folder: ./face_database beside this file. The database is built only at service startup.
+License: GNU Affero General Public License v3.0 only (AGPL-3.0-only).
 """
 
 from __future__ import annotations
@@ -652,7 +665,6 @@ def download_database_image(relative_path: str):
 def handle_large_upload(error):
     """Return a clear JSON error when the query image exceeds the size limit."""
     return jsonify({"success": False, "error": f"Uploaded file is larger than {MAX_UPLOAD_SIZE_MB} MB"}), 413
-
 
 if __name__ == "__main__":
     print_runtime_configuration()
